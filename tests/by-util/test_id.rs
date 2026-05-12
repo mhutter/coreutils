@@ -51,6 +51,49 @@ fn test_id_no_specified_user() {
         .code_is(exp_result.code());
 }
 
+// requiring root permissions.
+#[test]
+#[cfg(target_os = "linux")]
+fn test_id_nonexisting_ids() {
+    use uutests::get_tests_binary;
+
+    // Skip if user namespaces or util-linux's --map-user are unavailable.
+    let can_run_unshare = String::from_utf8_lossy(
+        &Command::new("unshare")
+            .args(["-U", "--map-user=0", "--", "whoami"])
+            .output()
+            .unwrap()
+            .stdout,
+    ) == "root\n";
+    if !can_run_unshare {
+        println!("test skipped: unshare -U --map-user not available");
+        return;
+    }
+
+    let unshare_args = ["-U", "--map-user=10101", "--map-group=10101", "--"];
+
+    let exp_result = Command::new("unshare")
+        .args(unshare_args)
+        .arg(util_name!())
+        .output()
+        .unwrap();
+
+    let result = Command::new("unshare")
+        .args(unshare_args)
+        .arg(get_tests_binary!())
+        .arg(util_name!())
+        .output()
+        .unwrap();
+
+    // The same macOS-only ": Invalid argument" tail seen elsewhere in this file
+    // isn't expected on Linux, but we strip it for consistency.
+    let exp_stderr = String::from_utf8_lossy(&exp_result.stderr).replace(": Invalid argument", "");
+    let act_stderr = String::from_utf8_lossy(&result.stderr).replace(": Invalid argument", "");
+
+    assert_eq!(act_stderr, exp_stderr);
+    assert_eq!(result.status.code(), exp_result.status.code());
+}
+
 #[test]
 fn test_id_single_user() {
     let test_users = [&whoami()[..]];
