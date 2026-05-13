@@ -119,9 +119,12 @@ pub fn get_groups() -> IOResult<Vec<gid_t>> {
 pub fn get_groups_gnu(arg_id: Option<u32>) -> IOResult<Vec<gid_t>> {
     let groups = get_groups()?;
     let egid = arg_id.unwrap_or_else(crate::features::process::getegid);
-    Ok(sort_groups(groups, egid))
+    let mut groups = sort_groups(groups, egid);
+    groups.dedup();
+    Ok(groups)
 }
 
+/// If present, move the entry for `egid` to the front of the list.
 #[cfg(all(unix, not(target_os = "redox"), feature = "process"))]
 fn sort_groups(mut groups: Vec<gid_t>, egid: gid_t) -> Vec<gid_t> {
     if let Some(index) = groups.iter().position(|&x| x == egid) {

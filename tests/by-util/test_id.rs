@@ -51,47 +51,67 @@ fn test_id_no_specified_user() {
         .code_is(exp_result.code());
 }
 
-// requiring root permissions.
 #[test]
 #[cfg(target_os = "linux")]
 fn test_id_nonexisting_ids() {
-    use uutests::get_tests_binary;
+    use uutests::{get_tests_binary, util::unshare_bin};
 
-    // Skip if user namespaces or util-linux's --map-user are unavailable.
-    let can_run_unshare = String::from_utf8_lossy(
-        &Command::new("unshare")
-            .args(["-U", "--map-user=0", "--", "whoami"])
-            .output()
-            .unwrap()
-            .stdout,
-    ) == "root\n";
-    if !can_run_unshare {
-        println!("test skipped: unshare -U --map-user not available");
-        return;
-    }
+    let unshare = unwrap_or_return!(unshare_bin());
 
-    let unshare_args = ["-U", "--map-user=10101", "--map-group=10101", "--"];
+    let unshare_args = ["-U", "--map-user=10101", "--"];
 
-    let exp_result = Command::new("unshare")
+    let exp_result = Command::new(&unshare)
         .args(unshare_args)
         .arg(util_name!())
         .output()
         .unwrap();
 
-    let result = Command::new("unshare")
+    let result = Command::new(unshare)
         .args(unshare_args)
         .arg(get_tests_binary!())
         .arg(util_name!())
         .output()
         .unwrap();
 
-    // The same macOS-only ": Invalid argument" tail seen elsewhere in this file
-    // isn't expected on Linux, but we strip it for consistency.
-    let exp_stderr = String::from_utf8_lossy(&exp_result.stderr).replace(": Invalid argument", "");
-    let act_stderr = String::from_utf8_lossy(&result.stderr).replace(": Invalid argument", "");
-
-    assert_eq!(act_stderr, exp_stderr);
     assert_eq!(result.status.code(), exp_result.status.code());
+
+    let exp_stderr = String::from_utf8_lossy(&exp_result.stderr);
+    let act_stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(act_stderr, exp_stderr);
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn test_id_duplicate_gids() {
+    use uutests::{get_tests_binary, util::unshare_bin};
+
+    let unshare = unwrap_or_return!(unshare_bin());
+    let unshare_args = ["-U", "--map-groups=auto", "--"];
+
+    let id_args: &[&[&'static str]] = &[&[], &["-G"]];
+
+    for &args in id_args {
+        let exp_result = Command::new(&unshare)
+            .args(unshare_args)
+            .arg(util_name!())
+            .args(args)
+            .output()
+            .unwrap();
+
+        let result = Command::new(&unshare)
+            .args(unshare_args)
+            .arg(get_tests_binary!())
+            .arg(util_name!())
+            .args(args)
+            .output()
+            .unwrap();
+
+        assert_eq!(result.status.code(), exp_result.status.code());
+
+        let exp_stdout = String::from_utf8_lossy(&exp_result.stdout);
+        let act_stdout = String::from_utf8_lossy(&result.stdout);
+        assert_eq!(act_stdout, exp_stdout);
+    }
 }
 
 #[test]
